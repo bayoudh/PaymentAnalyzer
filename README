@@ -1,0 +1,71 @@
+# PaymentAnalyzer
+
+**A lightweight web tool for merging and analyzing payment card transactions with fleet truck data.**
+
+Built with Flask and Pandas, PaymentAnalyzer processes Excel/CSV exports, cleans card numbers and amounts automatically, and produces a consolidated report ready for download.
+
+---
+
+## Key Features
+
+- **Dual file import** — Merge transaction data with truck number records in one click
+- **Intelligent column matching** — Auto-detects required columns by keyword (French & English)
+- **Data cleaning engine** — Handles scientific notation, formula strings, European number formats, and whitespace issues
+- **Formatted Excel export** — Download a styled `.xlsx` report with per-card summaries and grand totals
+- **Responsive interface** — Clean, mobile-friendly UI
+- **Portable build** — Compatible with PyInstaller for standalone `.exe` distribution
+
+---
+
+## How It Works
+┌─────────────────────┐ ┌─────────────────────┐ │ File 1: Transactions│ │ File 2: Nb Truck │ │ (.xlsx / .csv) │ │ (.xlsx / .csv) │ └─────────┬───────────┘ └─────────┬───────────┘ │ │ ▼ ▼ ┌──────────────┐ ┌──────────────┐ │ Clean cards │ │ Clean cards │ │ Clean amounts│ │ Match trucks │ └──────┬───────┘ └──────┬───────┘ │ │ └──────────┬───────────────┘ ▼ ┌────────────────┐ │ Merge on Card │ │ Aggregate │ └───────┬────────┘ ▼ ┌──────────────────┐ │ Results Table │ │ Excel Download │ └──────────────────┘
+
+
+---
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.8+
+
+### Installation
+
+```bash
+git clone https://github.com/your-username/PaymentAnalyzer.git
+cd PaymentAnalyzer
+pip install -r requirements.txt
+Run
+python app.py
+The application opens automatically at http://127.0.0.1:5000.
+
+Input Files
+File 1 — Transactions
+Column	Keywords Matched
+Card number	numéro du moyen de paiement, carte, card, payment
+Amount	montant, amount
+File 2 — Truck Numbers
+Column	Keywords Matched
+Card number	numéro du moyen de paiement, carte, card, payment
+Truck number	nb truck, nb track, truck, track
+Supported formats: .xlsx, .xls, .csv
+
+
+
+Project Structure
+PaymentAnalyzer/
+├── app.py              # Application logic & routes
+├── requirements.txt    # Dependencies
+├── app.ico             # App icon
+├── templates/
+│   └── index.html      # Jinja2 template
+└── static/
+    └── style.css       # Styles
+Tech Stack
+Component	Technology
+Backend	Flask
+Data processing	Pandas
+Excel generation	OpenPyXL
+Contributing
+Contribations are welcome. Please open an issue or submit a pull request.
+

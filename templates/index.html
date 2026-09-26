@@ -263,6 +263,22 @@
             font-weight: bold;
         }
 
+        .card-link {
+            color: #0b5ed7;
+
+            font-family: monospace;
+
+            font-weight: bold;
+
+            text-decoration: underline;
+
+            cursor: pointer;
+        }
+
+        .card-link:hover {
+            color: #084298;
+        }
+
         @media (max-width: 700px) {
 
             .upload-grid {
@@ -366,6 +382,29 @@
             </div>
 
 
+            <div
+                class="upload-box"
+                style="margin-bottom: 25px;"
+            >
+
+                <h3>
+                    📅 Date (optionnel)
+                </h3>
+
+                <p>
+                    Filtrer les transactions sur un jour précis
+                </p>
+
+                <input
+                    type="date"
+                    name="date_filter"
+                    value="{{ date_filter or '' }}"
+                    style="width: 100%; margin-top: 15px; padding: 10px;"
+                >
+
+            </div>
+
+
             <button
                 type="submit"
                 class="confirm-btn"
@@ -395,6 +434,20 @@
              RESULTAT
         ====================================================== -->
 
+        {% if card_warning and result is not none %}
+
+            <div
+                class="error"
+                style="background: #fff8e5; color: #8a6100; border-color: #ffd97a;"
+            >
+
+                ⚠️ {{ card_warning }}
+
+            </div>
+
+        {% endif %}
+
+
         {% if result is not none %}
 
             <div class="result-section">
@@ -412,7 +465,7 @@
                             href="{{ download_url }}"
                             class="download-btn"
                         >
-                            📊 Télécharger Excel
+                            📊 Télécharger Excel (4 feuilles)
                         </a>
 
                     {% endif %}
@@ -424,7 +477,40 @@
                      RESUME
                 ================================================== -->
 
+                {% if active_date %}
+
+                    <p class="subtitle">
+                        📅 Filtré sur le {{ active_date }}
+                    </p>
+
+                {% endif %}
+
+
+                {% if diagnostics %}
+
+                    <p
+                        class="subtitle"
+                        style="font-size: 13px; font-family: monospace;"
+                    >
+                        🔍 {{ diagnostics }}
+                    </p>
+
+                {% endif %}
+
                 <div class="summary">
+
+                    <div class="summary-box">
+
+                        <div class="summary-title">
+                            Cartes analysées
+                        </div>
+
+                        <div class="summary-value">
+                            {{ total_cards }}
+                        </div>
+
+                    </div>
+
 
                     <div class="summary-box">
 
@@ -447,6 +533,32 @@
 
                         <div class="summary-value">
                             {{ format_money(total_amount) }}
+                        </div>
+
+                    </div>
+
+
+                    <div class="summary-box">
+
+                        <div class="summary-title">
+                            Volume total
+                        </div>
+
+                        <div class="summary-value">
+                            {{ format_money(total_volume) }}
+                        </div>
+
+                    </div>
+
+
+                    <div class="summary-box">
+
+                        <div class="summary-title">
+                            Cartes non trouvées
+                        </div>
+
+                        <div class="summary-value">
+                            {{ unmatched_count }}
                         </div>
 
                     </div>
@@ -478,7 +590,15 @@
                                 </th>
 
                                 <th>
+                                    Date
+                                </th>
+
+                                <th>
                                     Nb transactions
+                                </th>
+
+                                <th>
+                                    Volume total
                                 </th>
 
                                 <th>
@@ -497,7 +617,12 @@
                                 <tr>
 
                                     <td>
-                                        {{ row["Carte"] }}
+                                        <a
+                                            href="#detail"
+                                            class="card-link"
+                                            data-card="{{ row['Carte'] }}"
+                                            title="Voir les transactions de {{ row['Carte'] }}"
+                                        >{{ row["Carte"] }}</a>
                                     </td>
 
                                     <td>
@@ -505,7 +630,15 @@
                                     </td>
 
                                     <td>
+                                        {{ row["Date"] }}
+                                    </td>
+
+                                    <td>
                                         {{ row["Nb_transactions"] }}
+                                    </td>
+
+                                    <td>
+                                        {{ format_money(row["Volume_total"]) }}
                                     </td>
 
                                     <td>
@@ -529,7 +662,14 @@
                                 </td>
 
                                 <td>
+                                </td>
+
+                                <td>
                                     {{ total_transactions }}
+                                </td>
+
+                                <td>
+                                    {{ format_money(total_volume) }}
                                 </td>
 
                                 <td>
@@ -544,6 +684,131 @@
 
                 </div>
 
+
+                <!-- =================================================
+                     DETAIL TRANSACTIONS : DATE + MONTANT
+                ================================================== -->
+
+                {% if detailed is not none %}
+
+                    <h2 id="detail" style="margin-top: 35px;">
+                        Détail des transactions
+                    </h2>
+
+                    <p class="subtitle" style="text-align: left;">
+                        Chaque ligne : date et montant de la transaction.
+                        Cliquez sur un numéro de carte ci-dessus pour filtrer.
+                    </p>
+
+                    <p id="filter-info" style="display: none; font-weight: bold;"></p>
+
+                    <button
+                        id="clear-filter"
+                        type="button"
+                        style="display: none; margin-bottom: 10px; padding: 8px 16px; border: 1px solid #bbb; border-radius: 8px; background: #fff; cursor: pointer;"
+                    >
+                        ✕ Afficher toutes les cartes
+                    </button>
+
+                    <div
+                        class="table-container"
+                        style="margin-top: 15px;"
+                    >
+
+                        <table id="detail-table">
+
+                            <thead>
+
+                                <tr>
+
+                                    <th>
+                                        Carte
+                                    </th>
+
+                                    <th>
+                                        nb truck
+                                    </th>
+
+                                    <th>
+                                        Date transaction
+                                    </th>
+
+                                    <th>
+                                        Volume
+                                    </th>
+
+                                    <th>
+                                        Montant transaction
+                                    </th>
+
+                                </tr>
+
+                            </thead>
+
+
+                            <tbody>
+
+                                {% for _, row in detailed.iterrows() %}
+
+                                    <tr>
+
+                                        <td>
+                                            {{ row["Carte"] }}
+                                        </td>
+
+                                        <td>
+                                            {{ row["nb truck"] }}
+                                        </td>
+
+                                        <td>
+                                            {{ row["Date"] }}
+                                        </td>
+
+                                        <td>
+                                            {{ format_money(row["Volume"]) }}
+                                        </td>
+
+                                        <td>
+                                            {{ format_money(row["Montant"]) }}
+                                        </td>
+
+                                    </tr>
+
+                                {% endfor %}
+
+
+                                <!-- TOTAL -->
+
+                                <tr class="total-row">
+
+                                    <td>
+                                        TOTAL
+                                    </td>
+
+                                    <td>
+                                    </td>
+
+                                    <td>
+                                    </td>
+
+                                    <td>
+                                        {{ format_money(total_volume) }}
+                                    </td>
+
+                                    <td>
+                                        {{ format_money(total_amount) }}
+                                    </td>
+
+                                </tr>
+
+                            </tbody>
+
+                        </table>
+
+                    </div>
+
+                {% endif %}
+
             </div>
 
         {% endif %}
@@ -551,6 +816,57 @@
     </div>
 
 </div>
+
+<script>
+(function () {
+    function clearFilter() {
+        var rows = document.querySelectorAll(
+            "#detail-table tbody tr:not(.total-row)"
+        );
+        rows.forEach(function (tr) {
+            tr.style.display = "";
+        });
+        var info = document.getElementById("filter-info");
+        var btn = document.getElementById("clear-filter");
+        if (info) {
+            info.style.display = "none";
+            info.textContent = "";
+        }
+        if (btn) btn.style.display = "none";
+    }
+
+    document.querySelectorAll(".card-link").forEach(function (a) {
+        a.addEventListener("click", function (e) {
+            var card = (e.currentTarget.getAttribute("data-card") || "").trim();
+            if (!card) return;
+            var rows = document.querySelectorAll(
+                "#detail-table tbody tr:not(.total-row)"
+            );
+            var count = 0;
+            rows.forEach(function (tr) {
+                var cell = (tr.cells[0].textContent || "").trim();
+                if (cell === card) {
+                    tr.style.display = "";
+                    count += 1;
+                } else {
+                    tr.style.display = "none";
+                }
+            });
+            var info = document.getElementById("filter-info");
+            var btn = document.getElementById("clear-filter");
+            if (info) {
+                info.textContent =
+                    "🔍 Carte " + card + " — " + count + " transaction(s).";
+                info.style.display = "";
+            }
+            if (btn) btn.style.display = "";
+        });
+    });
+
+    var clearBtn = document.getElementById("clear-filter");
+    if (clearBtn) clearBtn.addEventListener("click", clearFilter);
+})();
+</script>
 
 </body>
 

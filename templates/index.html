@@ -279,6 +279,51 @@
             color: #084298;
         }
 
+        .date-link {
+            color: #0b5ed7;
+
+            font-weight: bold;
+
+            text-decoration: underline;
+
+            cursor: pointer;
+
+            white-space: nowrap;
+        }
+
+        .date-link:hover {
+            color: #084298;
+        }
+
+        .detail-filters {
+            display: flex;
+
+            gap: 10px;
+
+            flex-wrap: wrap;
+
+            align-items: center;
+
+            margin-bottom: 10px;
+        }
+
+        .detail-filters select,
+        .detail-filters input {
+            padding: 8px 12px;
+
+            border: 1px solid #bbb;
+
+            border-radius: 8px;
+
+            background: #fff;
+
+            cursor: pointer;
+        }
+
+        .detail-filters input {
+            cursor: text;
+        }
+
         @media (max-width: 700px) {
 
             .upload-grid {
@@ -382,29 +427,6 @@
             </div>
 
 
-            <div
-                class="upload-box"
-                style="margin-bottom: 25px;"
-            >
-
-                <h3>
-                    📅 Date (optionnel)
-                </h3>
-
-                <p>
-                    Filtrer les transactions sur un jour précis
-                </p>
-
-                <input
-                    type="date"
-                    name="date_filter"
-                    value="{{ date_filter or '' }}"
-                    style="width: 100%; margin-top: 15px; padding: 10px;"
-                >
-
-            </div>
-
-
             <button
                 type="submit"
                 class="confirm-btn"
@@ -465,7 +487,7 @@
                             href="{{ download_url }}"
                             class="download-btn"
                         >
-                            📊 Télécharger Excel (4 feuilles)
+                            📊 Télécharger Excel (5 feuilles)
                         </a>
 
                     {% endif %}
@@ -476,14 +498,6 @@
                 <!-- =================================================
                      RESUME
                 ================================================== -->
-
-                {% if active_date %}
-
-                    <p class="subtitle">
-                        📅 Filtré sur le {{ active_date }}
-                    </p>
-
-                {% endif %}
 
 
                 {% if diagnostics %}
@@ -697,18 +711,76 @@
 
                     <p class="subtitle" style="text-align: left;">
                         Chaque ligne : date et montant de la transaction.
-                        Cliquez sur un numéro de carte ci-dessus pour filtrer.
+                        Cliquez sur un numéro de carte pour filtrer par carte,
+                        sur une date pour filtrer par mois, ou saisissez un mois (MM/AAAA),
+                        une carte ou un nb truck ci-dessous.
+                        Le TOTAL en bas est recalculé sur les lignes visibles en cas de filtre.
                     </p>
 
-                    <p id="filter-info" style="display: none; font-weight: bold;"></p>
+                    <div class="detail-filters">
 
-                    <button
-                        id="clear-filter"
-                        type="button"
-                        style="display: none; margin-bottom: 10px; padding: 8px 16px; border: 1px solid #bbb; border-radius: 8px; background: #fff; cursor: pointer;"
-                    >
-                        ✕ Afficher toutes les cartes
-                    </button>
+                        <label for="date-input" style="font-weight: bold;">
+                            📅 Mois (MM/AAAA) :
+                        </label>
+
+                        <input
+                            id="date-input"
+                            type="text"
+                            inputmode="numeric"
+                            list="date-list"
+                            autocomplete="off"
+                            placeholder="ex. 08/2007"
+                            style="padding: 8px 12px; border: 1px solid #bbb; border-radius: 8px; background: #fff; min-width: 160px;"
+                        >
+
+                        <datalist id="date-list">
+                            {% if detail_months %}
+                                {% for m in detail_months %}
+                                    <option value="{{ m['month'] }}">{{ m["month"] }} ({{ m["nb"] }})</option>
+                                {% endfor %}
+                            {% endif %}
+                            {% if empty_date_count %}
+                                <option value="(Sans date)">(Sans date) ({{ empty_date_count }})</option>
+                            {% endif %}
+                        </datalist>
+
+                        <label for="card-search" style="font-weight: bold;">
+                            🔍 Carte :
+                        </label>
+
+                        <input
+                            id="card-search"
+                            type="text"
+                            autocomplete="off"
+                            placeholder="ex. 6665..."
+                            style="padding: 8px 12px; border: 1px solid #bbb; border-radius: 8px; background: #fff; min-width: 140px;"
+                        >
+
+                        <label for="truck-search" style="font-weight: bold;">
+                            🚚 nb truck :
+                        </label>
+
+                        <input
+                            id="truck-search"
+                            type="text"
+                            autocomplete="off"
+                            placeholder="ex. T12..."
+                            style="padding: 8px 12px; border: 1px solid #bbb; border-radius: 8px; background: #fff; min-width: 140px;"
+                        >
+
+                        <small id="date-hint" style="display: none; color: #b00020; font-weight: bold;"></small>
+
+                        <p id="filter-info" style="display: none; font-weight: bold; margin: 0;"></p>
+
+                        <button
+                            id="clear-filter"
+                            type="button"
+                            style="display: none; padding: 8px 16px; border: 1px solid #bbb; border-radius: 8px; background: #fff; cursor: pointer;"
+                        >
+                            ✕ Effacer filtres
+                        </button>
+
+                    </div>
 
                     <div
                         class="table-container"
@@ -748,54 +820,116 @@
 
                             <tbody>
 
-                                {% for _, row in detailed.iterrows() %}
+                                {% if detail_groups %}
 
-                                    <tr>
+                                    {% for g in detail_groups %}
 
-                                        <td>
-                                            {{ row["Carte"] }}
-                                        </td>
+                                        {% for row in g["rows"] %}
 
-                                        <td>
-                                            {{ row["nb truck"] }}
-                                        </td>
+                                            <tr
+                                                class="detail-row"
+                                                data-card="{{ row['Carte'] }}"
+                                                data-truck="{{ row['nb truck'] }}"
+                                                data-date="{{ row['Date'] }}"
+                                                data-volume="{{ row['Volume'] }}"
+                                                data-montant="{{ row['Montant'] }}"
+                                            >
 
-                                        <td>
-                                            {{ row["Date"] }}
-                                        </td>
+                                                <td>
+                                                    {{ row["Carte"] }}
+                                                </td>
 
-                                        <td>
-                                            {{ format_money(row["Volume"]) }}
-                                        </td>
+                                                <td>
+                                                    {{ row["nb truck"] }}
+                                                </td>
 
-                                        <td>
-                                            {{ format_money(row["Montant"]) }}
-                                        </td>
+                                                <td>
+                                                    <a
+                                                        href="#detail"
+                                                        class="date-link"
+                                                        data-date="{{ row['Date'] }}"
+                                                        title="Filtrer sur le mois de {{ row['Date'] or '(Sans date)' }}"
+                                                    >{{ row["Date"] or "(Sans date)" }}</a>
+                                                </td>
 
-                                    </tr>
+                                                <td>
+                                                    {{ format_money(row["Volume"]) }}
+                                                </td>
 
-                                {% endfor %}
+                                                <td>
+                                                    {{ format_money(row["Montant"]) }}
+                                                </td>
+
+                                            </tr>
+
+                                        {% endfor %}
+
+                                    {% endfor %}
+
+                                {% else %}
+
+                                    {% for _, row in detailed.iterrows() %}
+
+                                        <tr
+                                            class="detail-row"
+                                            data-card="{{ row['Carte'] }}"
+                                            data-truck="{{ row['nb truck'] }}"
+                                            data-date="{{ row['Date'] }}"
+                                            data-volume="{{ row['Volume'] }}"
+                                            data-montant="{{ row['Montant'] }}"
+                                        >
+
+                                            <td>
+                                                {{ row["Carte"] }}
+                                            </td>
+
+                                            <td>
+                                                {{ row["nb truck"] }}
+                                            </td>
+
+                                            <td>
+                                                <a
+                                                    href="#detail"
+                                                    class="date-link"
+                                                    data-date="{{ row['Date'] }}"
+                                                    title="Filtrer sur le mois de {{ row['Date'] or '(Sans date)' }}"
+                                                >{{ row["Date"] or "(Sans date)" }}</a>
+                                            </td>
+
+                                            <td>
+                                                {{ format_money(row["Volume"]) }}
+                                            </td>
+
+                                            <td>
+                                                {{ format_money(row["Montant"]) }}
+                                            </td>
+
+                                        </tr>
+
+                                    {% endfor %}
+
+                                {% endif %}
 
 
                                 <!-- TOTAL -->
 
                                 <tr class="total-row">
 
-                                    <td>
+                                    <td id="detail-total-label">
                                         TOTAL
                                     </td>
 
                                     <td>
                                     </td>
 
-                                    <td>
+                                    <td id="detail-total-count">
                                     </td>
 
-                                    <td>
+                                    <td id="detail-total-volume">
                                         {{ format_money(total_volume) }}
                                     </td>
 
-                                    <td>
+                                    <td id="detail-total-montant">
                                         {{ format_money(total_amount) }}
                                     </td>
 
@@ -819,49 +953,266 @@
 
 <script>
 (function () {
-    function clearFilter() {
-        var rows = document.querySelectorAll(
-            "#detail-table tbody tr:not(.total-row)"
+    var activeCard = "";
+    var activeMonth = null; // null = tous les mois ; "" = (Sans date) ; sinon MM/AAAA
+    var dateInvalid = false;
+    var searchCard = "";
+    var searchTruck = "";
+
+    function norm(v) {
+        return String(v === null || v === undefined ? "" : v).trim().toLowerCase();
+    }
+
+    function fmtFR(n) {
+        try {
+            return n.toLocaleString("fr-FR", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        } catch (e) {
+            return n.toFixed(2);
+        }
+    }
+
+    function num(v) {
+        var n = parseFloat(v);
+        return isNaN(n) ? 0 : n;
+    }
+
+    function monthOf(fullDate) {
+        // JJ/MM/AAAA -> MM/AAAA ; "" ou illisible -> "".
+        var m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(fullDate || "");
+        return m ? (m[2] + "/" + m[3]) : "";
+    }
+
+    function monthToInput(v) {
+        if (v === null || v === undefined) return "";
+        if (v === "") return "(Sans date)";
+        return v;
+    }
+
+    function parseMonthInput(raw) {
+        // Saisie souple -> MM/AAAA. Ex : 8/2007, 08/2007, 08-2007,
+        // 08.07, "08/2007". Tolère aussi une date complète (10/8/2007
+        // -> 08/2007) et "(Sans date)".
+        // Retour : "MM/AAAA", "" pour (Sans date), null si invalide.
+        if (raw === null || raw === undefined) return null;
+        var text = String(raw).trim();
+        if (text === "") return null;
+        var low = text.toLowerCase();
+        if (low === "(sans date)" || low === "sans date") return "";
+
+        var unified = text.replace(/[.\-\s]+/g, "/");
+        var parts = unified.split("/");
+        var mo, y;
+        if (parts.length === 2) {
+            mo = parts[0].trim();
+            y = parts[1].trim();
+        } else if (parts.length === 3) {
+            // Date complète saisie : on garde le mois.
+            mo = parts[1].trim();
+            y = parts[2].trim();
+            if (!/^\d{1,2}$/.test(parts[0].trim())) return null;
+        } else {
+            return null;
+        }
+        if (!/^\d{1,2}$/.test(mo)) return null;
+        if (!/^\d{2}$/.test(y) && !/^\d{4}$/.test(y)) return null;
+        var mon = parseInt(mo, 10);
+        if (mon < 1 || mon > 12) return null;
+        if (y.length === 2) y = "20" + y;
+        return (mon < 10 ? "0" + mon : "" + mon) + "/" + y;
+    }
+
+    function detailRows() {
+        return document.querySelectorAll(
+            "#detail-table tbody tr.detail-row"
         );
-        rows.forEach(function (tr) {
-            tr.style.display = "";
-        });
+    }
+
+    function refreshControls() {
         var info = document.getElementById("filter-info");
         var btn = document.getElementById("clear-filter");
-        if (info) {
-            info.style.display = "none";
-            info.textContent = "";
+        var input = document.getElementById("date-input");
+        var hint = document.getElementById("date-hint");
+        if (input && document.activeElement !== input) {
+            var shown = monthToInput(activeMonth);
+            if ((input.value || "") !== shown) input.value = shown;
         }
-        if (btn) btn.style.display = "none";
+        if (hint) {
+            if (dateInvalid && input && (input.value || "").trim() !== "") {
+                hint.textContent =
+                    "⚠️ Mois invalide — format attendu : MM/AAAA (ex. 08/2007).";
+                hint.style.display = "";
+            } else {
+                hint.textContent = "";
+                hint.style.display = "none";
+            }
+        }
+        if (btn) {
+            btn.style.display =
+                (activeCard || activeMonth !== null || dateInvalid || searchCard || searchTruck) ? "" : "none";
+        }
+        return info;
+    }
+
+    function updateTotals() {
+        var rows = detailRows();
+        var totalVol = 0;
+        var totalMt = 0;
+        var totalCount = 0;
+
+        rows.forEach(function (tr) {
+            if (tr.style.display === "none") return;
+            var v = num(tr.getAttribute("data-volume"));
+            var m = num(tr.getAttribute("data-montant"));
+            totalVol += v;
+            totalMt += m;
+            totalCount += 1;
+        });
+
+        var volEl = document.getElementById("detail-total-volume");
+        var mtEl = document.getElementById("detail-total-montant");
+        var countEl = document.getElementById("detail-total-count");
+        if (volEl) volEl.textContent = fmtFR(totalVol);
+        if (mtEl) mtEl.textContent = fmtFR(totalMt);
+        if (countEl) countEl.textContent = totalCount > 0 ? totalCount + " ligne(s)" : "";
+
+        var info = refreshControls();
+        if (info) {
+            if (activeCard || activeMonth !== null || searchCard || searchTruck) {
+                var parts = [];
+                if (activeCard) parts.push("Carte " + activeCard);
+                if (searchCard) parts.push("Recherche carte '" + searchCard + "'");
+                if (searchTruck) parts.push("Recherche truck '" + searchTruck + "'");
+                if (activeMonth !== null) {
+                    parts.push("Mois " + (activeMonth || "(Sans date)"));
+                }
+                info.textContent =
+                    "🔍 " + parts.join(" + ") + " — " + totalCount +
+                    " transaction(s) — Volume : " + fmtFR(totalVol) +
+                    " — Montant : " + fmtFR(totalMt);
+                info.style.display = "";
+            } else if (totalCount === 0) {
+                info.textContent = "Aucune transaction visible.";
+                info.style.display = "";
+            } else {
+                info.style.display = "none";
+                info.textContent = "";
+            }
+        }
+    }
+
+    function applyFilters() {
+        detailRows().forEach(function (tr) {
+            var c = (tr.getAttribute("data-card") || "").trim();
+            var t = (tr.getAttribute("data-truck") || "").trim();
+            var d = tr.getAttribute("data-date") || "";
+            var okCard = (!activeCard || c === activeCard) &&
+                (!searchCard || norm(c).indexOf(searchCard) !== -1);
+            var okTruck = (!searchTruck || norm(t).indexOf(searchTruck) !== -1);
+            var okMonth = !dateInvalid &&
+                ((activeMonth === null || activeMonth === undefined) ||
+                    monthOf(d) === activeMonth);
+            tr.style.display = (okCard && okTruck && okMonth) ? "" : "none";
+        });
+        updateTotals();
+    }
+
+    function clearFilter() {
+        activeCard = "";
+        activeMonth = null;
+        dateInvalid = false;
+        searchCard = "";
+        searchTruck = "";
+        var input = document.getElementById("date-input");
+        if (input) input.value = "";
+        var cs = document.getElementById("card-search");
+        if (cs) cs.value = "";
+        var ts = document.getElementById("truck-search");
+        if (ts) ts.value = "";
+        detailRows().forEach(function (tr) {
+            tr.style.display = "";
+        });
+        updateTotals();
     }
 
     document.querySelectorAll(".card-link").forEach(function (a) {
         a.addEventListener("click", function (e) {
             var card = (e.currentTarget.getAttribute("data-card") || "").trim();
             if (!card) return;
-            var rows = document.querySelectorAll(
-                "#detail-table tbody tr:not(.total-row)"
-            );
-            var count = 0;
-            rows.forEach(function (tr) {
-                var cell = (tr.cells[0].textContent || "").trim();
-                if (cell === card) {
-                    tr.style.display = "";
-                    count += 1;
-                } else {
-                    tr.style.display = "none";
-                }
-            });
-            var info = document.getElementById("filter-info");
-            var btn = document.getElementById("clear-filter");
-            if (info) {
-                info.textContent =
-                    "🔍 Carte " + card + " — " + count + " transaction(s).";
-                info.style.display = "";
-            }
-            if (btn) btn.style.display = "";
+            activeCard = (activeCard === card) ? "" : card;
+            var cs = document.getElementById("card-search");
+            if (cs && norm(cs.value) !== norm(activeCard) && activeCard) cs.value = activeCard;
+            applyFilters();
         });
     });
+
+    document.querySelectorAll(".date-link").forEach(function (a) {
+        a.addEventListener("click", function (e) {
+            var raw = e.currentTarget.getAttribute("data-date");
+            var m = monthOf(raw === null || raw === undefined ? "" : raw);
+            activeMonth = (activeMonth !== null && activeMonth === m) ? null : m;
+            dateInvalid = false;
+            var input = document.getElementById("date-input");
+            if (input) input.value = monthToInput(activeMonth);
+            applyFilters();
+        });
+    });
+
+    function readDateInput(commitInvalid) {
+        var input = document.getElementById("date-input");
+        var raw = input ? (input.value || "") : "";
+        if (raw.trim() === "") {
+            activeMonth = null;
+            dateInvalid = false;
+            applyFilters();
+            return;
+        }
+        var parsed = parseMonthInput(raw);
+        if (parsed !== null) {
+            activeMonth = parsed;
+            dateInvalid = false;
+            applyFilters();
+        } else if (commitInvalid) {
+            activeMonth = null;
+            dateInvalid = true;
+            applyFilters();
+        } else {
+            var hint = document.getElementById("date-hint");
+            if (hint) {
+                hint.textContent =
+                    "⚠️ Mois invalide — format attendu : MM/AAAA (ex. 08/2007).";
+                hint.style.display = "";
+            }
+        }
+    }
+
+    var dateInput = document.getElementById("date-input");
+    if (dateInput) {
+        dateInput.addEventListener("input", function () {
+            readDateInput(false);
+        });
+        dateInput.addEventListener("change", function () {
+            readDateInput(true);
+        });
+    }
+
+    var cardSearch = document.getElementById("card-search");
+    if (cardSearch) {
+        cardSearch.addEventListener("input", function () {
+            searchCard = norm(cardSearch.value);
+            applyFilters();
+        });
+    }
+
+    var truckSearch = document.getElementById("truck-search");
+    if (truckSearch) {
+        truckSearch.addEventListener("input", function () {
+            searchTruck = norm(truckSearch.value);
+            applyFilters();
+        });
+    }
 
     var clearBtn = document.getElementById("clear-filter");
     if (clearBtn) clearBtn.addEventListener("click", clearFilter);

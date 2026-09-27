@@ -744,24 +744,8 @@ def _is_pseudo_card(card):
 # TRAITEMENT PRINCIPAL
 # ============================================================
 
-def _iso_to_fr(date_value):
-    """Convertit 'AAAA-MM-JJ' (input type=date) ou 'JJ/MM/AAAA' -> 'JJ/MM/AAAA'."""
-    if date_value is None:
-        return ""
-    text = str(date_value).strip()
-    if text == "":
-        return ""
-    m = re.fullmatch(r"(\d{4})-(\d{1,2})-(\d{1,2})", text)
-    if m:
-        return f"{int(m.group(3)):02d}/{int(m.group(2)):02d}/{m.group(1)}"
-    m = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{2,4})", text)
-    if m:
-        year = m.group(3) if len(m.group(3)) == 4 else "20" + m.group(3)
-        return f"{int(m.group(1)):02d}/{int(m.group(2)):02d}/{year}"
-    return ""
 
-
-def process_files(transaction_file, truck_file, date_filter=None):
+def process_files(transaction_file, truck_file):
 
     # ========================================================
     # FICHIER 1 : TRANSACTIONS
@@ -937,19 +921,6 @@ def process_files(transaction_file, truck_file, date_filter=None):
         transactions["Volume"] = 0.0
 
     # ========================================================
-    # FILTRE DATE (optionnel, format AAAA-MM-JJ depuis le formulaire)
-    # ========================================================
-
-    active_date = _iso_to_fr(date_filter)
-    if active_date:
-        transactions = transactions[
-            transactions["Date"] == active_date
-        ].copy()
-        if transactions.empty:
-            raise ValueError(
-                f"Aucune transaction à la date {active_date}."
-            )
-
     # ========================================================
     # CALCUL DES TRANSACTIONS (par carte + date)
     # ========================================================
@@ -1124,6 +1095,74 @@ def process_files(transaction_file, truck_file, date_filter=None):
     ).drop(columns=["_sort_date"]).reset_index(drop=True)
 
     # ========================================================
+    # TOTAUX PAR DATE + GROUPES POUR SOUS-TOTAUX (tableau Détail)
+    # ========================================================
+
+    detailed["Date"] = detailed["Date"].fillna("")
+    if detailed.empty:
+        per_date = pd.DataFrame(
+            columns=["Date", "Nb_transactions", "Volume_total", "Montant_total"]
+        )
+        detail_groups = []
+    else:
+        per_date = (
+            detailed
+            .groupby("Date", as_index=False, dropna=False)
+            .agg(
+                Nb_transactions=("Carte", "size"),
+                Volume_total=("Volume", "sum"),
+                Montant_total=("Montant", "sum"),
+            )
+        )
+        per_date["Date"] = per_date["Date"].fillna("")
+        per_date["_sort_date"] = pd.to_datetime(
+            per_date["Date"], format="%d/%m/%Y", errors="coerce"
+        )
+        per_date = per_date.sort_values(
+            by=["_sort_date", "Date"]
+        ).drop(columns=["_sort_date"]).reset_index(drop=True)
+
+        detail_groups = []
+        for _, prow in per_date.iterrows():
+            date_label = prow["Date"]
+            subset = detailed[detailed["Date"] == date_label]
+            detail_groups.append({
+                "date": date_label if date_label != "" else "(Sans date)",
+                "date_key": date_label,
+                "rows": subset.to_dict(orient="records"),
+                "nb": int(prow["Nb_transactions"]),
+                "volume": float(prow["Volume_total"]),
+                "montant": float(prow["Montant_total"]),
+            })
+
+    # ========================================================
+    # MOIS DISTINCTS (MM/AAAA) POUR LE FILTRE MOIS DU DÉTAIL
+    # ========================================================
+
+    if detailed.empty:
+        detail_months = []
+        empty_date_count = 0
+    else:
+        _months = (
+            detailed["Date"]
+            .str.extract(r"^\d{2}/(\d{2})/(\d{4})$")
+            .dropna()
+        )
+        if _months.empty:
+            detail_months = []
+        else:
+            _months["month"] = _months[0] + "/" + _months[1]
+            _counts = _months["month"].value_counts()
+            _order = sorted(
+                _counts.index.tolist(),
+                key=lambda m: (int(m[3:]), int(m[:2])),
+            )
+            detail_months = [
+                {"month": m, "nb": int(_counts[m])} for m in _order
+            ]
+        empty_date_count = int((detailed["Date"] == "").sum())
+
+    # ========================================================
     # CARTES NON TROUVÉES (dans CSV mais absentes du mapping)
     # ========================================================
 
@@ -1216,6 +1255,10 @@ def process_files(transaction_file, truck_file, date_filter=None):
     return {
         "result": result,
         "detailed": detailed,
+        "detail_groups": detail_groups,
+        "detail_months": detail_months,
+        "empty_date_count": empty_date_count,
+        "per_date": per_date,
         "unmatched": unmatched,
         "per_truck": per_truck,
         "total_transactions": total_transactions,
@@ -1223,7 +1266,6 @@ def process_files(transaction_file, truck_file, date_filter=None):
         "total_volume": total_volume,
         "total_cards": total_cards,
         "unmatched_count": unmatched_count,
-        "active_date": active_date,
         "card_warning": card_warning,
         "diagnostics": diagnostics,
     }
@@ -1247,7 +1289,7 @@ def format_money(value):
 # ============================================================
 
 # ============================================================
-# EXPORT EXCEL 4 FEUILLES
+# EXPORT EXCEL 5 FEUILLES
 # ============================================================
 
 def _with_total(df, total_values):
@@ -1263,14 +1305,55 @@ def _style_sheet(writer, sheet_name, widths, money_cols):
     for col in money_cols:
         for cell in worksheet[col][1:max_row]:
             cell.number_format = '#,##0.00'
+    # Gras sur les lignes SOUS-TOTAL / TOTAL (col A)
+    try:
+        from openpyxl.styles import Font, PatternFill
+        bold = Font(bold=True)
+        sub_fill = PatternFill(start_color="E8EEF4", fill_type="solid")
+        total_fill = PatternFill(start_color="EEEEEE", fill_type="solid")
+        for row in worksheet.iter_rows(min_row=2, max_row=max_row):
+            first = "" if row[0].value is None else str(row[0].value)
+            if first.startswith("SOUS-TOTAL"):
+                for cell in row:
+                    cell.font = bold
+                    cell.fill = sub_fill
+            elif first == "TOTAL":
+                for cell in row:
+                    cell.font = bold
+                    cell.fill = total_fill
+    except Exception:
+        pass
 
 
 def build_export(data):
-    """Construit le classeur 4 feuilles et retourne les bytes."""
+    """Construit le classeur 5 feuilles et retourne les bytes."""
     result = data["result"]
     detailed = data["detailed"]
     unmatched = data["unmatched"]
     per_truck = data["per_truck"]
+
+    # Synthèse par carte (sans Date) : Carte | nb truck | Nb | Montant
+    if result.empty:
+        per_card = pd.DataFrame(
+            columns=["Carte", "nb truck", "Nb_transactions", "Montant_total"]
+        )
+    else:
+        per_card = (
+            result
+            .groupby(["Carte", "nb truck"], as_index=False, dropna=False)
+            .agg(
+                Nb_transactions=("Nb_transactions", "sum"),
+                Montant_total=("Montant_total", "sum"),
+            )
+            .sort_values(by="Carte")
+            .reset_index(drop=True)
+        )
+    per_card_sheet = _with_total(per_card, {
+        "Carte": "TOTAL",
+        "nb truck": "",
+        "Nb_transactions": int(per_card["Nb_transactions"].sum()) if not per_card.empty else 0,
+        "Montant_total": float(per_card["Montant_total"].sum()) if not per_card.empty else 0.0,
+    })
 
     resume = _with_total(result, {
         "Carte": "TOTAL",
@@ -1281,13 +1364,48 @@ def build_export(data):
         "Montant_total": data["total_amount"],
     })
 
-    trans = _with_total(detailed, {
-        "Carte": "TOTAL",
-        "nb truck": "",
-        "Date": "",
-        "Volume": float(detailed["Volume"].sum()) if not detailed.empty else 0.0,
-        "Montant": float(detailed["Montant"].sum()) if not detailed.empty else 0.0,
-    })
+    trans_rows = []
+    if detailed.empty:
+        trans = pd.DataFrame(
+            columns=["Carte", "nb truck", "Date", "Volume", "Montant"]
+        )
+        trans = _with_total(trans, {
+            "Carte": "TOTAL",
+            "nb truck": "",
+            "Date": "",
+            "Volume": 0.0,
+            "Montant": 0.0,
+        })
+    else:
+        _trans_detail = detailed[
+            ["Carte", "nb truck", "Date", "Volume", "Montant"]
+        ].copy()
+        _trans_detail["_sort_date"] = pd.to_datetime(
+            _trans_detail["Date"], format="%d/%m/%Y", errors="coerce"
+        )
+        _trans_detail = _trans_detail.sort_values(
+            by=["_sort_date", "Date", "Carte"]
+        ).drop(columns=["_sort_date"]).reset_index(drop=True)
+        for date_label, subset in _trans_detail.groupby("Date", sort=False):
+            trans_rows.append(subset[["Carte", "nb truck", "Date", "Volume", "Montant"]])
+            date_txt = date_label if str(date_label) != "" else "(Sans date)"
+            trans_rows.append(pd.DataFrame([{
+                "Carte": f"SOUS-TOTAL {date_txt} ({len(subset)})",
+                "nb truck": "",
+                "Date": date_label,
+                "Volume": float(subset["Volume"].sum()),
+                "Montant": float(subset["Montant"].sum()),
+            }]))
+        trans = pd.concat(trans_rows, ignore_index=True) if trans_rows else _trans_detail[
+            ["Carte", "nb truck", "Date", "Volume", "Montant"]
+        ]
+        trans = _with_total(trans, {
+            "Carte": "TOTAL",
+            "nb truck": "",
+            "Date": "",
+            "Volume": float(detailed["Volume"].sum()),
+            "Montant": float(detailed["Montant"].sum()),
+        })
 
     if unmatched.empty:
         notfound = pd.DataFrame(
@@ -1347,6 +1465,13 @@ def build_export(data):
             ["D", "E"],
         )
 
+        per_card_sheet.to_excel(writer, index=False, sheet_name="Synthèse par carte")
+        _style_sheet(
+            writer, "Synthèse par carte",
+            {"A": 22, "B": 16, "C": 20, "D": 18},
+            ["D"],
+        )
+
     output.seek(0)
     return output.getvalue()
 
@@ -1358,6 +1483,14 @@ def index():
 
     detailed = None
 
+    detail_groups = []
+
+    detail_months = []
+
+    empty_date_count = 0
+
+    per_date = None
+
     total_transactions = 0
 
     total_amount = 0
@@ -1368,8 +1501,6 @@ def index():
 
     unmatched_count = 0
 
-    active_date = ""
-
     card_warning = ""
 
     diagnostics = ""
@@ -1377,8 +1508,6 @@ def index():
     error = None
 
     download_url = None
-
-    date_filter = ""
 
     if request.method == "POST":
 
@@ -1389,8 +1518,6 @@ def index():
         truck_file = request.files.get(
             "truck_file"
         )
-
-        date_filter = (request.form.get("date_filter") or "").strip()
 
         # ====================================================
         # VERIFICATION FICHIERS
@@ -1430,23 +1557,25 @@ def index():
 
                 data = process_files(
                     transaction_file,
-                    truck_file,
-                    date_filter=date_filter or None
+                    truck_file
                 )
 
                 result = data["result"]
                 detailed = data["detailed"]
+                detail_groups = data.get("detail_groups", [])
+                detail_months = data.get("detail_months", [])
+                empty_date_count = data.get("empty_date_count", 0)
+                per_date = data.get("per_date")
                 total_transactions = data["total_transactions"]
                 total_amount = data["total_amount"]
                 total_volume = data["total_volume"]
                 total_cards = data["total_cards"]
                 unmatched_count = data["unmatched_count"]
-                active_date = data["active_date"]
                 card_warning = data.get("card_warning", "")
                 diagnostics = data.get("diagnostics", "")
 
                 # =================================================
-                # CREATION EXCEL (4 feuilles)
+                # CREATION EXCEL (5 feuilles)
                 # =================================================
 
                 excel_bytes = build_export(data)
@@ -1489,6 +1618,14 @@ def index():
 
         detailed=detailed,
 
+        detail_groups=detail_groups,
+
+        detail_months=detail_months,
+
+        empty_date_count=empty_date_count,
+
+        per_date=per_date,
+
         total_transactions=total_transactions,
 
         total_amount=total_amount,
@@ -1499,13 +1636,9 @@ def index():
 
         unmatched_count=unmatched_count,
 
-        active_date=active_date,
-
         card_warning=card_warning,
 
         diagnostics=diagnostics,
-
-        date_filter=date_filter,
 
         format_money=format_money,
 
